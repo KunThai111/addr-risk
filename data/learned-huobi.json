@@ -1,0 +1,95 @@
+{
+  "tron": {
+    "TYRKcXR9ULbvgEvKBSaQ2ANVEw3FiBCdAr": {
+      "label": "火币出金钱包",
+      "kind": "hot",
+      "evidence": [
+        "转入 8 笔中 8 笔（100%）来自火币：HTX 5",
+        "向 56 个不同地址打款（出金特征）"
+      ],
+      "learnedAt": "2026-09-29T04:45:10"
+    },
+    "TUQVuaGXXsJZBCfjzJehXYAFARRt3cpSWF": {
+      "label": "火币归集钱包",
+      "kind": "collection",
+      "evidence": [
+        "转出 70 笔中 68 笔流向火币，按金额占 100%：HTX 5",
+        "67 个不同地址向它转入，转出集中到火币"
+      ],
+      "learnedAt": "2026-09-29T04:51:27"
+    }
+  },
+  "eth": {
+    "0xcbb77289b129d84af488b34826612013af69cfd0": {
+      "label": "火币充值地址",
+      "kind": "deposit",
+      "evidence": [
+        "转出 16 笔中 16 笔流向火币，按金额占 100%：HTX: Hot Wallet",
+        "16 次转出中 16 次清空余额（归集节奏）"
+      ],
+      "learnedAt": "2026-09-29T04:52:52"
+    },
+    "0xc71102745e543890367e4ab1e9d19ead58b974cb": {
+      "label": "火币归集钱包",
+      "kind": "collection",
+      "evidence": [
+        "转出 133 笔中 122 笔流向火币，按金额占 95%：HTX: Hot Wallet、Huobi: Recovery、Huobi 5",
+        "69 个不同地址向它转入，转出集中到火币"
+      ],
+      "learnedAt": "2026-09-29T05:14:40"
+    },
+    "0x9be5b8a7314552fa47feb1355cd5b4adc7bb7516": {
+      "label": "火币归集钱包",
+      "kind": "collection",
+      "evidence": [
+        "火币充值地址 0xc711…74cb 的归集去向（同一充值地址也归集到 HTX: Hot Wallet、Huobi 12、Huobi 5）"
+      ],
+      "learnedAt": "2026-09-29T05:19:36"
+    },
+    "0x6a79b5142ed23875ce46f40826ff686b5429f78f": {
+      "label": "火币充值地址",
+      "kind": "deposit",
+      "evidence": [
+        "转出 3 笔中 3 笔流向火币，按金额占 100%：火币归集钱包（行为识别）",
+        "2 次转出中 2 次清空余额（归集节奏）"
+      ],
+      "learnedAt": "2026-09-29T05:20:23"
+    },
+    "0xdfcd480649b1cf21c56c49973aee4f36a04b1e8a": {
+      "label": "火币充值地址",
+      "kind": "deposit",
+      "evidence": [
+        "转出 7 笔中 7 笔流向火币，按金额占 100%：火币归集钱包（行为识别）",
+        "7 次转出中 7 次清空余额（归集节奏）"
+      ],
+      "learnedAt": "2026-09-29T05:20:36"
+    },
+    "0x70a9b59440a81b6ea1d9adc3396b1c703fb3a81d": {
+      "label": "火币充值地址",
+      "kind": "deposit",
+      "evidence": [
+        "转出 5 笔中 5 笔流向火币，按金额占 100%：火币归集钱包（行为识别）、HTX: Hot Wallet",
+        "5 次转出中 4 次清空余额（归集节奏）"
+      ],
+      "learnedAt": "2026-09-29T05:47:57"
+    },
+    "0x14c943073051e1b5395b698e0b43cc9dce55806f": {
+      "label": "火币充值地址",
+      "kind": "deposit",
+      "evidence": [
+        "转出 9 笔中 9 笔流向火币，按金额占 100%：火币归集钱包（行为识别）、HTX: Hot Wallet",
+        "9 次转出中 9 次清空余额（归集节奏）"
+      ],
+      "learnedAt": "2026-09-29T06:16:05"
+    },
+    "0xef92a101b810afef599459bbaba7a087cf4e4286": {
+      "label": "火币充值地址",
+      "kind": "deposit",
+      "evidence": [
+        "转出 17 笔中 17 笔流向火币，按金额占 100%：火币归集钱包（行为识别）、HTX: Hot Wallet",
+        "17 次转出中 17 次清空余额（归集节奏）"
+      ],
+      "learnedAt": "2026-09-29T06:16:22"
+    }
+  }
+}

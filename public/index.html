@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>地址风险 & 火币关联追踪</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  :root { --bg:#0f172a; --panel:#111c33; --line:#23314f; --text:#e2e8f0; --muted:#8b9bb7; --blue:#3b82f6; --orange:#f59e0b; --red:#ef4444; --purple:#a855f7; --green:#22c55e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif; height:100vh; display:flex; flex-direction:column; }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 12px 0 0; white-space:nowrap; }
+  input, select, button { background:#0b1428; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:7px 10px; font:inherit; }
+  #address { flex:1; min-width:320px; font-family:ui-monospace,Menlo,monospace; }
+  label.opt { color:var(--muted); display:flex; align-items:center; gap:4px; font-size:13px; }
+  label.opt input { width:64px; padding:5px 6px; }
+  button { cursor:pointer; background:var(--blue); border-color:var(--blue); font-weight:600; }
+  button.secondary { background:transparent; border-color:var(--line); color:var(--muted); }
+  button:disabled { opacity:.5; cursor:default; }
+  main { flex:1; display:flex; min-height:0; }
+  aside { width:420px; border-right:1px solid var(--line); overflow:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
+  #graphWrap { flex:1; position:relative; }
+  #graph { position:absolute; inset:0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card h3 { margin:0 0 8px; font-size:13px; color:var(--muted); font-weight:600; letter-spacing:.5px; }
+  .score { display:flex; align-items:baseline; gap:10px; }
+  .score b { font-size:40px; line-height:1; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+  .lv-低 { background:#14532d; color:#86efac; } .lv-中 { background:#713f12; color:#fde68a; } .lv-高, .lv-严重 { background:#7f1d1d; color:#fecaca; }
+  .mono { font-family:ui-monospace,Menlo,monospace; font-size:12px; word-break:break-all; }
+  .muted { color:var(--muted); }
+  .hit { border-top:1px dashed var(--line); padding:8px 0; }
+  .hit:first-of-type { border-top:none; padding-top:0; }
+  .path { display:flex; flex-wrap:wrap; gap:2px 4px; align-items:center; margin-top:4px; }
+  .path a { color:#93c5fd; text-decoration:none; font-family:ui-monospace,Menlo,monospace; font-size:12px; cursor:pointer; }
+  .path a:hover { text-decoration:underline; }
+  .yes { color:var(--orange); font-weight:700; } .no { color:var(--green); font-weight:700; }
+  #log { max-height:180px; overflow:auto; font-size:12px; color:var(--muted); }
+  #log div.warn { color:#fbbf24; } #log div.err { color:#f87171; }
+  #detail { position:absolute; right:12px; top:12px; width:360px; max-height:calc(100% - 24px); overflow:auto; display:none; box-shadow:0 8px 30px rgba(0,0,0,.4); }
+  #legend { position:absolute; left:12px; bottom:12px; display:flex; gap:12px; font-size:12px; color:var(--muted); background:rgba(15,23,42,.85); padding:6px 10px; border-radius:8px; }
+  #legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
+  #empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); pointer-events:none; text-align:center; }
+  a.ext { color:#93c5fd; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔍 地址风险 & 火币关联追踪</h1>
+  <input id="address" placeholder="输入 ETH（0x…）或 TRON（T…）地址" spellcheck="false" />
+  <label class="opt" title="上游、下游各追踪多少跳（1-5）">跳数 <input id="hops" type="number" min="1" max="5" value="5" /></label>
+  <label class="opt" title="每个地址最多继续追踪几个对手方（按主流资产交易笔数排序）">每跳分支 <input id="fanout" type="number" min="1" max="50" value="20" /></label>
+  <label class="opt" title="每个中间地址最多拉取多少条记录">每节点记录 <input id="perNode" type="number" min="50" max="1000" step="50" value="100" /></label>
+  <label class="opt" title="上游、下游各自最多展开多少个地址">节点上限 <input id="maxNodes" type="number" min="5" max="1000" value="200" /></label>
+  <label class="opt" title="默认只显示通向火币地址的链路"><input id="showAll" type="checkbox" style="width:auto" /> 显示全部链路</label>
+  <button id="start">开始追踪</button>
+  <button id="stop" class="secondary" disabled>停止</button>
+</header>
+<main>
+  <aside>
+    <div class="card" id="summary"><h3>结果</h3><div class="muted">输入地址后开始追踪。上下各 5 跳约需 2～6 分钟，结果会边查边显示。</div></div>
+    <div class="card"><h3 id="recentTitle">最近交易检测</h3><div id="recentList" class="muted">暂无</div></div>
+    <div class="card"><h3>火币（HTX）关联路径</h3><div id="huobiList" class="muted">暂无</div></div>
+    <div class="card"><h3>链路上的风险地址</h3><div id="riskList" class="muted">暂无</div></div>
+    <div class="card"><h3>进度</h3><div id="log"></div></div>
+  </aside>
+  <div id="graphWrap">
+    <div id="graph"></div>
+    <div id="empty">左侧是资金来源（上游），中间是被查地址，右侧是资金去向（下游）</div>
+    <div id="hiddenInfo" style="position:absolute;right:12px;bottom:12px;font-size:12px;color:var(--muted)"></div>
+    <div id="legend">
+      <span><i style="background:var(--blue)"></i>被查地址</span>
+      <span><i style="background:var(--orange)"></i>火币</span>
+      <span><i style="background:var(--red)"></i>风险地址</span>
+      <span><i style="background:var(--purple)"></i>诈骗 / 投毒仿冒</span>
+      <span><i style="background:#475569"></i>普通地址</span>
+      <span><i style="background:var(--green)"></i>检测通过（第 1 跳保留，更远的 3 秒后收起）</span>
+    </div>
+    <div id="detail" class="card"></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const short = (a) => (a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString('zh-CN', { hour12: false }) : '-');
+
+let chain = 'eth', hops = 5, es = null, network = null;
+const nodes = new vis.DataSet(), edges = new vis.DataSet();
+const nodeInfo = new Map(), edgeInfo = new Map();
+const huobiHits = [], riskHits = [];
+
+const addrUrl = (a) => (chain === 'eth' ? `https://eth.blockscout.com/address/${a}` : `https://tronscan.org/#/address/${a}`);
+const txUrl = (h) => (chain === 'eth' ? `https://eth.blockscout.com/tx/${h}` : `https://tronscan.org/#/transaction/${h}`);
+
+function initGraph() {
+  network = new vis.Network($('graph'), { nodes, edges }, {
+    layout: { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 230, nodeSpacing: 70, shakeTowards: 'roots' } },
+    physics: { enabled: false },
+    interaction: { hover: true, tooltipDelay: 150 },
+    nodes: { shape: 'box', font: { color: '#e2e8f0', face: 'Menlo, monospace', size: 12, multi: 'md' }, borderWidth: 1.5, margin: 8, shapeProperties: { borderRadius: 6 } },
+    edges: { arrows: { to: { enabled: true, scaleFactor: 0.6 } }, color: { color: '#475569', highlight: '#93c5fd' }, font: { color: '#94a3b8', size: 10, strokeWidth: 0, align: 'top' }, smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 } },
+  });
+  network.on('click', (p) => (p.nodes.length ? showDetail(p.nodes[0]) : ($('detail').style.display = 'none')));
+}
+
+function styleNode(n) {
+  let bg = '#1e293b', border = '#475569';
+  if (n.dir === 'root') (bg = '#1d4ed8'), (border = '#93c5fd');
+  else if (n.huobi && n.huobiConfidence === 'medium') (bg = '#422006'), (border = '#f59e0b');
+  else if (n.huobi) (bg = '#92400e'), (border = '#f59e0b');
+  else if (n.flags && n.flags.length) (bg = '#7f1d1d'), (border = '#ef4444');
+  else if (n.isScam || n.poison) (bg = '#581c87'), (border = '#a855f7');
+  const isPassing = passing.has(n.id) || (keptGreen.has(n.id) && !hitPathSets().nodeIds.has(n.id));
+  if (isPassing) (bg = '#14532d'), (border = '#22c55e');
+  const tag = n.huobi || (n.poison ? `仿冒 ${short(n.poison)}` : n.tags && n.tags[0]);
+  const lines = [`*${short(n.id)}*`];
+  if (isPassing) lines.push('✓ 无火币');
+  if (n.stop) lines.push(`${n.stop} · 不追踪`);
+  if (tag) lines.push(tag.length > 22 ? tag.slice(0, 22) + '…' : tag);
+  if (n.flags && n.flags.length) lines.push(`风险 ${n.score}`);
+  else if (n.hub) lines.push('高频地址');
+  const level = n.dir === 'up' ? hops - n.hop : n.dir === 'down' ? hops + n.hop : hops;
+  return { id: n.id, label: lines.join('\n'), level, color: { background: bg, border, highlight: { background: bg, border: '#fff' } }, shapeProperties: { borderDashes: n.expanded === false ? [4, 3] : false } };
+}
+
+let fitTimer = null;
+function scheduleFit(delay = 800) {
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(() => network && network.fit({ animation: { duration: 400 } }), delay);
+}
+
+function onNode(n) {
+  const prev = nodeInfo.get(n.id) || {};
+  nodeInfo.set(n.id, { ...prev, ...n });
+  scheduleRender();
+}
+
+function onEdge(e) {
+  edgeInfo.set(e.id, e);
+  scheduleRender();
+}
+
+const pruned = new Set();
+const passing = new Set();
+/** 第 1 跳（被查地址的直接交易对手）检测通过后常驻绿色，不收起 */
+const keptGreen = new Set();
+const checkedClean = new Set();
+let recentTxs = [];
+const PASS_LINGER_MS = 3000;
+let finished = false;
+let runId = 0;
+
+function hitPathSets() {
+  const nodeIds = new Set();
+  const edgeIds = new Set();
+  for (const h of huobiHits) {
+    h.path.forEach((a, i) => {
+      nodeIds.add(a);
+      if (!i) return;
+      const prev = h.path[i - 1];
+      for (const id of [`${prev}>${a}`, `${a}>${prev}`]) if (edgeInfo.has(id)) edgeIds.add(id);
+    });
+  }
+  return { nodeIds, edgeIds };
+}
+
+/**
+ * 后端确认某一支查完且没有火币：第 1 跳常驻绿色；更远的跳先标绿，3 秒后收起。
+ * 只挂在它身上的末端节点一起收起。
+ */
+function onPrune(id, hop) {
+  const onHit = hitPathSets().nodeIds;
+  if (onHit.has(id)) return;
+  const keep = hop === 1;
+  if (keep) keptGreen.add(id);
+  const done = (x) => pruned.has(x) || passing.has(x) || x === id;
+  const batch = keep ? [] : [id];
+  for (const e of edgeInfo.values()) {
+    const other = e.from === id ? e.to : e.to === id ? e.from : null;
+    const n = other && nodeInfo.get(other);
+    if (!n || n.dir === 'root' || n.expanded !== false || onHit.has(other) || done(other)) continue;
+    const allDone = [...edgeInfo.values()].every((x) => (x.from === other ? done(x.to) : x.to === other ? done(x.from) : true));
+    if (allDone) batch.push(other);
+  }
+  batch.forEach((x) => passing.add(x));
+  render();
+  const run = runId;
+  setTimeout(() => {
+    if (run !== runId) return;
+    batch.forEach((x) => {
+      passing.delete(x);
+      pruned.add(x);
+    });
+    render();
+  }, PASS_LINGER_MS);
+}
+
+/**
+ * 追踪中：先把每条链路画出来，某一支确认没有火币后再收起；
+ * 追踪结束：只留被查地址和通向火币的链路。
+ */
+function visibleSets() {
+  if ($('showAll').checked) return { nodeIds: new Set(nodeInfo.keys()), edgeIds: new Set(edgeInfo.keys()) };
+  const hit = hitPathSets();
+  const nodeIds = new Set(hit.nodeIds);
+  for (const n of nodeInfo.values()) {
+    if (n.dir === 'root' || keptGreen.has(n.id) || passing.has(n.id) || (!finished && !pruned.has(n.id))) nodeIds.add(n.id);
+  }
+  const rootId = [...nodeInfo.values()].find((n) => n.dir === 'root')?.id;
+  const edgeIds = new Set(hit.edgeIds);
+  for (const e of edgeInfo.values()) {
+    if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) continue;
+    const rootToKept = (e.from === rootId && keptGreen.has(e.to)) || (e.to === rootId && keptGreen.has(e.from));
+    if (!finished || rootToKept || passing.has(e.from) || passing.has(e.to)) edgeIds.add(e.id);
+  }
+  return { nodeIds, edgeIds };
+}
+
+let renderTimer = null;
+function scheduleRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(render, 300);
+}
+
+function render() {
+  const { nodeIds, edgeIds } = visibleSets();
+  const hitEdges = hitPathSets().edgeIds;
+  nodes.remove(nodes.getIds().filter((id) => !nodeIds.has(id)));
+  edges.remove(edges.getIds().filter((id) => !edgeIds.has(id)));
+  nodes.update([...nodeIds].filter((id) => nodeInfo.has(id)).map((id) => styleNode(nodeInfo.get(id))));
+  edges.update(
+    [...edgeIds].map((id) => {
+      const e = edgeInfo.get(id);
+      const onHitEdge = hitEdges.has(id);
+      const green = !onHitEdge && (passing.has(e.from) || passing.has(e.to) || keptGreen.has(e.from) || keptGreen.has(e.to));
+      return {
+        id,
+        from: e.from,
+        to: e.to,
+        label: `${e.amounts[0] || ''}${e.count > 1 ? ` · ${e.count}笔` : ''}`,
+        title: `${e.count} 笔：${e.amounts.join('，')}`,
+        color: green ? { color: '#22c55e', highlight: '#86efac' } : { color: '#475569', highlight: '#93c5fd' },
+        width: green ? 2 : 1,
+      };
+    }),
+  );
+  const hidden = nodeInfo.size - nodeIds.size;
+  $('empty').style.display = nodes.length > 1 ? 'none' : 'flex';
+  $('empty').textContent = nodeInfo.size <= 1 ? '左侧是资金来源（上游），中间是被查地址，右侧是资金去向（下游）' : `暂未发现通向火币的链路（已追踪 ${nodeInfo.size} 个地址，勾选“显示全部链路”可查看）`;
+  $('hiddenInfo').textContent = !$('showAll').checked && hidden > 0 ? `已收起 ${hidden} 个检查无火币的地址` : '';
+  scheduleFit();
+}
+
+const confPill = (c) => (c === 'high' ? '<span class="pill" style="background:#78350f;color:#fde68a">高置信</span>' : '<span class="pill" style="background:#334155;color:#cbd5e1">中置信</span>');
+const evidenceHtml = (list) =>
+  (list || []).filter((e) => !e.startsWith('标签：')).map((e) => `<div class="muted" style="font-size:12px">· ${esc(e)}</div>`).join('');
+
+function pathHtml(hit) {
+  const arrow = hit.dir === 'up' ? '←' : '→';
+  const sideArrow = hit.dir === 'up' ? '→' : '←';
+  return hit.path
+    .map((a, i) => `${i ? ` <span class="muted">${hit.side && i === hit.path.length - 1 ? sideArrow : arrow}</span> ` : ''}<a data-focus="${a}">${short(a)}</a>`)
+    .join('');
+}
+
+function txStatus(tx) {
+  if (huobiHits.some((h) => h.path[1] === tx.peer)) return 'huobi';
+  if (checkedClean.has(tx.peer)) return 'clean';
+  return finished ? 'skipped' : 'pending';
+}
+
+function renderRecent() {
+  const box = $('recentList');
+  if (!recentTxs.length) {
+    $('recentTitle').textContent = '最近交易检测';
+    box.className = 'muted';
+    box.textContent = finished ? '没有有效交易' : '暂无';
+    return;
+  }
+  const statuses = recentTxs.map(txStatus);
+  const doneCount = statuses.filter((s) => s !== 'pending').length;
+  const huobiCount = statuses.filter((s) => s === 'huobi').length;
+  $('recentTitle').textContent = finished
+    ? `最近 ${recentTxs.length} 笔交易：全部检测完毕${huobiCount ? `，${huobiCount} 笔涉及火币` : '，均无火币'}`
+    : `最近 ${recentTxs.length} 笔交易：已检测 ${doneCount} / ${recentTxs.length}`;
+  const badge = {
+    huobi: '<span style="color:var(--orange);font-weight:700">⚠ 火币</span>',
+    clean: '<span style="color:var(--green);font-weight:700">✓ 无火币</span>',
+    skipped: '<span class="muted">— 未追踪</span>',
+    pending: '<span class="muted">检测中…</span>',
+  };
+  box.className = '';
+  box.innerHTML = recentTxs
+    .map((tx, i) => `
+      <div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:3px 0;border-top:${i ? '1px dashed var(--line)' : 'none'}">
+        <span class="muted" style="width:92px">${fmtTime(tx.time).slice(2, 16)}</span>
+        <span style="width:30px">${tx.dir === 'up' ? '转入' : '转出'}</span>
+        <a class="mono" data-focus="${tx.peer}" style="color:#93c5fd;cursor:pointer;width:96px">${short(tx.peer)}</a>
+        <span style="flex:1;text-align:right" class="mono">${esc(tx.amount)}</span>
+        <span style="width:62px;text-align:right">${badge[statuses[i]]}</span>
+      </div>`)
+    .join('');
+}
+
+function renderHits() {
+  $('huobiList').className = huobiHits.length ? '' : 'muted';
+  $('huobiList').innerHTML = huobiHits.length
+    ? [...huobiHits].sort((a, b) => a.hop - b.hop).map((h) => `
+      <div class="hit">
+        <div><b>${h.dir === 'up' ? '上游' : '下游'}第 ${h.hop} 跳${h.side ? '（旁支）' : ''}</b> · <span class="yes">${esc(h.label)}</span> ${confPill(h.confidence)} <span class="muted">${h.count} 笔</span></div>
+        ${h.side ? `<div class="muted" style="font-size:12px">${esc(h.side)}</div>` : ''}
+        <div class="path">${pathHtml(h)}</div>
+        ${evidenceHtml(h.evidence)}
+        ${h.sample ? `<div class="muted" style="font-size:12px">${fmtTime(h.first)} ~ ${fmtTime(h.last)} · <a class="ext" href="${txUrl(h.sample)}" target="_blank">样例交易</a></div>` : ''}
+      </div>`).join('')
+    : '暂无';
+  $('riskList').className = riskHits.length ? '' : 'muted';
+  $('riskList').innerHTML = riskHits.length
+    ? [...riskHits].sort((a, b) => a.hop - b.hop).map((h) => `
+      <div class="hit">
+        <div><b>${h.dir === 'up' ? '上游' : '下游'}第 ${h.hop} 跳</b> · 风险 ${h.score} · <span style="color:#fca5a5">${h.flags.map((f) => esc(f.label)).join('、')}</span></div>
+        <div class="path">${pathHtml(h)}</div>
+      </div>`).join('')
+    : '暂无';
+}
+
+function renderSummary(s) {
+  const flags = s.flags.length ? s.flags.map((f) => `<div>· ${esc(f.label)} <span class="muted">（${esc(f.source)}）</span></div>`).join('') : '<div class="muted">无命中</div>';
+  const huobiLine = s.huobi.contacted
+    ? `<span class="yes">是</span>${s.huobi.hits.length ? `，最近在第 ${s.huobi.nearestHop} 跳，共 ${s.huobi.hits.length} 条路径` : ''}`
+    : `<span class="no">否</span> <span class="muted">（在已追踪范围内）</span>`;
+  const selfLine = s.selfHuobi
+    ? `<div style="margin-bottom:6px"><b>该地址本身：</b><span class="yes">${esc(s.selfHuobi.label)}</span> ${confPill(s.selfHuobi.confidence)}${evidenceHtml(s.selfHuobi.evidence)}</div>`
+    : '';
+  const learnedLine = s.huobi.learned.length ? `<div class="muted" style="font-size:12px">本次新学习 ${s.huobi.learned.length} 个火币地址，已存入 data/learned-huobi.json</div>` : '';
+  const coverage = `火币识别：名单 ${s.huobiListSize} 个 + ${s.chain === 'eth' ? 'Blockscout' : s.tronTagEnabled ? 'Tronscan' : '（未配置 Tronscan Key，无）'} 实体标签 + 行为识别（归集 / 充值 / 出金）`;
+  $('summary').innerHTML = `
+    <h3>结果 · ${s.chain.toUpperCase()}</h3>
+    <div class="mono"><a class="ext" href="${addrUrl(s.address)}" target="_blank">${s.address}</a></div>
+    <div style="margin-top:10px;padding:10px 12px;border-radius:8px;font-weight:700;${s.verdict.pass ? 'background:#14532d;color:#bbf7d0' : 'background:#7f1d1d;color:#fecaca'}">
+      <div style="font-size:18px">评估结论：${s.verdict.text}</div>
+      ${s.verdict.reasons.map((r) => `<div style="font-size:13px;font-weight:500;margin-top:2px">· ${esc(r)}</div>`).join('')}
+    </div>
+    <div class="score" style="margin:10px 0"><b>${s.score}</b><span class="pill lv-${s.level}">${s.level}风险</span>
+      <span class="muted">自身 ${s.directScore} · 链路传导 ${s.indirectScore}</span></div>
+    <div style="margin-bottom:6px"><b>是否接触过火币：</b>${huobiLine}</div>
+    ${selfLine}${learnedLine}
+    <div style="margin-bottom:6px"><b>自身风险标签：</b>${flags}</div>
+    ${s.poisonPeers.length ? `<div style="margin-bottom:6px"><b>投毒仿冒地址：</b><span style="color:#d8b4fe">${s.poisonPeers.length} 个</span> ${s.poisonPeers.filter((p) => p.paidTo).map((p) => `<div style="color:#f87171;font-weight:600">⚠ 曾向仿冒地址 <a data-focus="${p.address}" class="ext">${short(p.address)}</a> 转出 ${p.paidTo.map(esc).join('，')}，可能已被投毒骗走</div>`).join('')}${s.poisonPeers.slice(0, 5).map((p) => `<div class="mono">· <a data-focus="${p.address}" class="ext">${short(p.address)}</a> 仿冒 ${short(p.imitates)}</div>`).join('')}</div>` : ''}
+    ${s.chain === 'eth' ? `<div class="muted">Chainalysis 制裁：${s.onchain?.chainalysisSanctioned ? '是' : '否'} · USDT 冻结：${s.onchain?.usdtFrozen ? '是' : '否'}</div>` : `<div class="muted">USDT 冻结：${s.onchain?.usdtFrozen ? '是' : '否'}</div>`}
+    <div class="muted" style="margin-top:8px;font-size:12px">追踪范围：上下各 ${s.opts.hops} 跳，每跳 ${s.opts.fanout} 个分支，共 ${s.stats.nodes} 个节点、${s.stats.edges} 条资金边。${coverage}${s.stats.aborted ? '。<b style="color:#fbbf24">已手动停止，结果不完整</b>' : ''}</div>`;
+}
+
+function showDetail(id) {
+  const n = nodeInfo.get(id);
+  if (!n) return;
+  const rel = [...edgeInfo.values()].filter((e) => e.from === id || e.to === id);
+  $('detail').style.display = 'block';
+  $('detail').innerHTML = `
+    <h3>${n.dir === 'root' ? '被查地址' : `${n.dir === 'up' ? '上游' : '下游'}第 ${n.hop} 跳`}</h3>
+    <div class="mono"><a class="ext" href="${addrUrl(id)}" target="_blank">${id}</a></div>
+    ${n.huobi ? `<div style="margin-top:6px"><span class="yes">${esc(n.huobi)}</span> ${n.huobiConfidence ? confPill(n.huobiConfidence) : ''}${evidenceHtml(n.huobiEvidence)}</div>` : ''}
+    ${n.poison ? `<div style="margin-top:6px;color:#d8b4fe">疑似投毒：与 <a data-focus="${n.poison}" class="ext">${short(n.poison)}</a> 首尾相同，不要从记录里复制这个地址</div>` : ''}
+    ${n.tags && n.tags.length ? `<div style="margin-top:6px">标签：${n.tags.map(esc).join(' / ')}</div>` : ''}
+    ${n.flags ? `<div style="margin-top:6px">风险：${n.flags.length ? n.flags.map((f) => esc(f.label)).join('、') + `（${n.score} 分）` : '无命中'}</div>` : ''}
+    ${n.huobiKind === 'labeled' && /用户确认/.test(n.huobi || '') ? '' : `<div style="margin-top:8px"><button data-learn="${id}" style="padding:4px 10px;font-size:12px;background:#92400e;border-color:#f59e0b">确认是火币并学习</button> <span id="learnMsg" class="muted" style="font-size:12px"></span></div>`}
+    <div class="muted" style="margin-top:6px;font-size:12px">${[n.isContract && '合约', n.isScam && '诈骗标记', n.hub && '高频地址（只拉取了最近的记录）', n.stop && `${n.stop}：已检测不是火币，不再往下追踪`, n.expanded === false && !n.stop && '未继续展开'].filter(Boolean).join(' · ')}</div>
+    <div style="margin-top:8px">${rel.map((e) => `<div class="hit"><span class="mono">${short(e.from)} → ${short(e.to)}</span><br>${e.count} 笔：${e.amounts.map(esc).join('，')}<br><span class="muted">${fmtTime(e.first)} ~ ${fmtTime(e.last)}</span> · <a class="ext" href="${txUrl(e.sample)}" target="_blank">样例</a></div>`).join('')}</div>`;
+}
+
+function log(msg, cls = '') {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = `${new Date().toLocaleTimeString('zh-CN', { hour12: false })}  ${msg}`;
+  $('log').prepend(d);
+}
+
+function reset() {
+  nodes.clear(); edges.clear(); nodeInfo.clear(); edgeInfo.clear();
+  pruned.clear(); passing.clear(); keptGreen.clear(); checkedClean.clear(); recentTxs = []; finished = false; runId++;
+  renderRecent();
+  huobiHits.length = 0; riskHits.length = 0;
+  renderHits(); $('log').innerHTML = ''; $('detail').style.display = 'none';
+}
+
+function setRunning(on) {
+  $('start').disabled = on; $('stop').disabled = !on;
+  if (!on && es) { es.close(); es = null; }
+}
+
+function start() {
+  const address = $('address').value.trim();
+  if (!address) return $('address').focus();
+  chain = address.startsWith('0x') ? 'eth' : 'tron';
+  hops = Number($('hops').value) || 5;
+  reset();
+  if (!network) initGraph();
+  $('summary').innerHTML = '<h3>结果</h3><div class="muted">追踪中…</div>';
+  const qs = new URLSearchParams({ address, hops, fanout: $('fanout').value, perNode: $('perNode').value, maxNodes: $('maxNodes').value });
+  history.replaceState(null, '', `?${new URLSearchParams({ address })}`);
+  setRunning(true);
+  es = new EventSource(`/api/trace?${qs}`);
+  es.addEventListener('node', (e) => onNode(JSON.parse(e.data)));
+  es.addEventListener('edge', (e) => onEdge(JSON.parse(e.data)));
+  es.addEventListener('huobi', (e) => { const h = JSON.parse(e.data); huobiHits.push(h); renderHits(); renderRecent(); scheduleRender(); log(`发现火币关联：${h.dir === 'up' ? '上游' : '下游'}第 ${h.hop} 跳 ${h.label}`, 'warn'); });
+  es.addEventListener('risk', (e) => { const h = JSON.parse(e.data); riskHits.push(h); renderHits(); log(`发现风险地址：第 ${h.hop} 跳 ${short(h.address)}（${h.score}）`, 'warn'); });
+  es.addEventListener('status', (e) => { const s = JSON.parse(e.data); log(s.message, s.level || ''); });
+  es.addEventListener('recent', (e) => { recentTxs = JSON.parse(e.data).txs; renderRecent(); });
+  es.addEventListener('checked', (e) => {
+    const c = JSON.parse(e.data);
+    if (c.clean) {
+      checkedClean.add(c.id);
+      onPrune(c.id, c.hop);
+    }
+    renderRecent();
+  });
+  es.addEventListener('done', (e) => { finished = true; renderSummary(JSON.parse(e.data)); render(); renderRecent(); });
+  es.addEventListener('fail', (e) => { log(JSON.parse(e.data).message, 'err'); $('summary').innerHTML = `<h3>结果</h3><div style="color:#f87171">${esc(JSON.parse(e.data).message)}</div>`; setRunning(false); });
+  es.onerror = () => setRunning(false);
+}
+
+$('start').onclick = start;
+$('showAll').onchange = () => network && render();
+$('stop').onclick = () => { setRunning(false); log('已停止', 'warn'); };
+$('address').addEventListener('keydown', (e) => e.key === 'Enter' && start());
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-learn]');
+  if (btn) {
+    const id = btn.dataset.learn;
+    btn.disabled = true;
+    $('learnMsg').textContent = '学习中…';
+    const r = await (await fetch(`/api/learn?${new URLSearchParams({ address: id })}`)).json();
+    if (r.error) return ($('learnMsg').textContent = `失败：${r.error}`);
+    const n = nodeInfo.get(id);
+    nodeInfo.set(id, { ...n, huobi: r.label, huobiKind: 'labeled', huobiConfidence: 'high', huobiEvidence: ['用户确认'] });
+    render();
+    $('learnMsg').textContent = `已记录${r.learned.length ? `，并顺藤学到 ${r.learned.length} 个火币地址` : ''}。重新追踪后生效`;
+    log(`已确认 ${short(id)} 为火币地址${r.learned.map((l) => `；学到 ${short(l.address)}（${l.label}）`).join('')}`, 'warn');
+    return;
+  }
+  const a = e.target.closest('[data-focus]');
+  if (!a || !network) return;
+  const id = a.dataset.focus;
+  if (nodes.get(id)) {
+    network.selectNodes([id]);
+    network.focus(id, { scale: 1.1, animation: true });
+  }
+  showDetail(id);
+});
+const pre = new URLSearchParams(location.search).get('address');
+if (pre) $('address').value = pre;
+</script>
+</body>
+</html>
