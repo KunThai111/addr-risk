@@ -2,7 +2,9 @@
 
 链上地址风险评估工具：输入一个 ETH 或 TRON 地址，向上游（资金来源）和下游（资金去向）各追踪最多 5 跳，判断它是否和**火币（HTX）**有资金关联，并给出风险评分和“通过 / 不通过”结论。
 
-零依赖（只用 Node 内置模块），自带网页版和命令行版。
+**在线使用：https://kunthai111.github.io/addr-risk/**（打开即用，全部查询在你的浏览器里完成，不经过任何服务器）
+
+零依赖，自带网页版和命令行版。
 
 ## 功能
 
@@ -18,18 +20,28 @@
 - **地址投毒检测**：首尾相同的仿冒地址、0 金额转账、形近字符假币（如 `ÚЅDС`、`U5DC`）。
 - **网页可视化**：实时资金关系图；每条链路检测通过后第 1 跳标绿常驻、更远的跳收起，只保留通向火币的链路；最近 20 笔交易逐笔显示检测状态。
 
-## 快速开始
+## 使用
+
+### 网页版（推荐）
+
+直接打开 https://kunthai111.github.io/addr-risk/ ，输入 ETH（0x…）或 TRON（T…）地址即可。
+
+- **ETH 不需要任何 Key。**
+- **TRON 建议填写 Tronscan Key**（页面右上角，[免费注册](https://tronscan.org) → API Keys）：有 Key 时自带地址标签、风险标记，速度快；不填会退回 TronGrid（每秒 1 次、无标签）。Key 只保存在你自己的浏览器里。
+- 在图上点节点 →“确认是火币并学习”，结果保存在你本机浏览器；想共享给所有人，用命令行 `learn` 写入仓库后提交。
+
+### 本地运行
 
 需要 Node.js ≥ 22.9。
 
 ```bash
 git clone https://github.com/KunThai111/addr-risk.git
 cd addr-risk
-cp .env.example .env      # 可选：填入 TRONSCAN_API_KEY
+cp .env.example .env      # 可选：填入 TRONSCAN_API_KEY，本地网页会自动带上
 npm run web               # 打开 http://localhost:5178
 ```
 
-命令行：
+### 命令行
 
 ```bash
 npm run check -- <地址>                 # 默认上下各 1 跳
@@ -49,8 +61,19 @@ npm run update-labels                  # 刷新火币种子名单（TRON 需要 
 |---|---|
 | `data/huobi-eth.json` | ETH 火币种子名单（来自开源 etherscan-labels） |
 | `data/huobi-tron.json` | TRON 火币种子名单（来自 Tronscan 标签搜索） |
-| `data/learned-huobi.json` | 行为识别学到的火币地址及证据 |
-| `data/custom.json` | 用户确认的火币地址 |
+| `data/learned-huobi.json` | 行为识别学到的火币地址及证据（命令行写入；网页版只读，并叠加本机浏览器学到的） |
+| `data/custom.json` | 用户确认的火币地址（同上） |
+
+## 代码结构
+
+| 路径 | 说明 |
+|---|---|
+| `index.html` | 网页版（GitHub Pages 直接发布这个文件） |
+| `src/trace.mjs` | 多跳追踪引擎，浏览器和 Node 共用 |
+| `src/huobi.mjs` | 火币地址行为识别 |
+| `src/chains/` | ETH（Blockscout）、TRON（Tronscan / TronGrid）数据源 |
+| `src/store-node.mjs` / `web/store-browser.mjs` | 名单存储：Node 读写 `data/`，浏览器用仓库 JSON + localStorage |
+| `src/cli.mjs` / `src/server.mjs` | 命令行 / 本地预览服务器 |
 
 ## 数据来源
 

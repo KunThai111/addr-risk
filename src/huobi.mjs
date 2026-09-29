@@ -1,3 +1,4 @@
+import { cfg } from './config.mjs';
 /**
  * 火币地址行为识别。
  *
@@ -111,12 +112,12 @@ export function createHuobiClassifier(ctx) {
           return r;
         })
         .catch((e) => {
-          if (process.env.DEBUG) console.error(`[huobi] ${addr}:`, e);
+          if (cfg('DEBUG')) console.error(`[huobi] ${addr}:`, e);
           return null;
         });
       memo.set(addr, p);
     }
-    const timeout = new Promise((r) => setTimeout(() => r(null), 90000).unref());
+    const timeout = new Promise((r) => { const t = setTimeout(() => r(null), 90000); t?.unref?.(); });
     return Promise.race([memo.get(addr), timeout]);
   }
 

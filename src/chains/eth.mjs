@@ -1,7 +1,8 @@
+import { cfg } from '../config.mjs';
 import { fetchJson, sleep } from '../util.mjs';
 
 const BLOCKSCOUT = 'https://eth.blockscout.com/api/v2';
-const RPC = process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com';
+const RPC = () => cfg('ETH_RPC_URL') || 'https://ethereum-rpc.publicnode.com';
 
 const USDT = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 const CHAINALYSIS_ORACLE = '0x40C57923924B5c5c5455c48D93317139ADDaC8fb';
@@ -80,7 +81,7 @@ export async function fetchTransfers(address, { max }) {
 
 async function ethCallBool(to, selector, address) {
   const data = selector + address.toLowerCase().replace(/^0x/, '').padStart(64, '0');
-  const res = await fetchJson(RPC, {
+  const res = await fetchJson(RPC(), {
     method: 'POST',
     body: { jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] },
   });

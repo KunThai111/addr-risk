@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { cfg } from './config.mjs';
 import { fmtTime } from './util.mjs';
 import { trace, learnAddress, DEFAULTS } from './trace.mjs';
-import { updateEthLabels, updateTronLabels } from './labels.mjs';
+import { updateEthLabels, updateTronLabels, useStore } from './labels.mjs';
+import { nodeStore } from './store-node.mjs';
 import { searchTaggedAddresses } from './chains/tron.mjs';
 
 const HELP = `用法:
@@ -102,6 +104,7 @@ function printReport(r) {
   console.log(L.join('\n'));
 }
 
+useStore(nodeStore);
 const opts = parseArgs(process.argv.slice(2));
 if (opts.help || !opts._.length) {
   console.log(HELP);
@@ -126,7 +129,7 @@ try {
     const which = opts._[1] || 'all';
     if (which === 'eth' || which === 'all') console.log(`ETH 火币名单：${await updateEthLabels()} 个`);
     if (which === 'tron' || which === 'all') {
-      if (!process.env.TRONSCAN_API_KEY) console.log('TRON：跳过（未配置 TRONSCAN_API_KEY）');
+      if (!cfg('TRONSCAN_API_KEY')) console.log('TRON：跳过（未配置 TRONSCAN_API_KEY）');
       else console.log(`TRON 火币名单：${await updateTronLabels(searchTaggedAddresses)} 个`);
     }
   } else {

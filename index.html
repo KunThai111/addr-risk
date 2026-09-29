@@ -54,7 +54,8 @@
   <label class="opt" title="每个中间地址最多拉取多少条记录">每节点记录 <input id="perNode" type="number" min="50" max="1000" step="50" value="100" /></label>
   <label class="opt" title="上游、下游各自最多展开多少个地址">节点上限 <input id="maxNodes" type="number" min="5" max="1000" value="200" /></label>
   <label class="opt" title="默认只显示通向火币地址的链路"><input id="showAll" type="checkbox" style="width:auto" /> 显示全部链路</label>
-  <button id="start">开始追踪</button>
+  <label class="opt" title="TRON 强烈建议填写（免费注册：tronscan.org → API Keys）。只保存在你自己的浏览器里，不会上传">Tronscan Key <input id="tronKey" type="password" placeholder="可选" autocomplete="off" style="width:150px" /></label>
+  <button id="start" disabled>开始追踪</button>
   <button id="stop" class="secondary" disabled>停止</button>
 </header>
 <main>
@@ -80,13 +81,18 @@
     <div id="detail" class="card"></div>
   </div>
 </main>
-<script>
+<script type="module">
+import { trace, learnAddress } from './src/trace.mjs';
+import { useStore } from './src/labels.mjs';
+import { setConfig } from './src/config.mjs';
+import { createBrowserStore } from './web/store-browser.mjs';
+
 const $ = (id) => document.getElementById(id);
 const short = (a) => (a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString('zh-CN', { hour12: false }) : '-');
 
-let chain = 'eth', hops = 5, es = null, network = null;
+let chain = 'eth', hops = 5, abort = null, network = null;
 const nodes = new vis.DataSet(), edges = new vis.DataSet();
 const nodeInfo = new Map(), edgeInfo = new Map();
 const huobiHits = [], riskHits = [];
@@ -387,38 +393,58 @@ function reset() {
 
 function setRunning(on) {
   $('start').disabled = on; $('stop').disabled = !on;
-  if (!on && es) { es.close(); es = null; }
+  if (!on && abort) { abort.abort(); abort = null; }
 }
 
-function start() {
+/** 追踪引擎推送的事件；传入的是引擎内部的活对象，先拷贝一份快照 */
+const snap = (d) => JSON.parse(JSON.stringify(d));
+const handlers = {
+  node: onNode,
+  edge: onEdge,
+  huobi: (h) => { huobiHits.push(h); renderHits(); renderRecent(); scheduleRender(); log(`发现火币关联：${h.dir === 'up' ? '上游' : '下游'}第 ${h.hop} 跳 ${h.label}`, 'warn'); },
+  risk: (h) => { riskHits.push(h); renderHits(); log(`发现风险地址：第 ${h.hop} 跳 ${short(h.address)}（${h.score}）`, 'warn'); },
+  status: (s) => log(s.message, s.level || ''),
+  recent: (r) => { recentTxs = r.txs; renderRecent(); },
+  checked: (c) => {
+    if (c.clean) {
+      checkedClean.add(c.id);
+      onPrune(c.id, c.hop);
+    }
+    renderRecent();
+  },
+  done: (s) => { finished = true; renderSummary(s); render(); renderRecent(); },
+};
+
+async function start() {
   const address = $('address').value.trim();
   if (!address) return $('address').focus();
   chain = address.startsWith('0x') ? 'eth' : 'tron';
   hops = Number($('hops').value) || 5;
   reset();
   if (!network) initGraph();
+  applyKeys();
   $('summary').innerHTML = '<h3>结果</h3><div class="muted">追踪中…</div>';
-  const qs = new URLSearchParams({ address, hops, fanout: $('fanout').value, perNode: $('perNode').value, maxNodes: $('maxNodes').value });
   history.replaceState(null, '', `?${new URLSearchParams({ address })}`);
   setRunning(true);
-  es = new EventSource(`/api/trace?${qs}`);
-  es.addEventListener('node', (e) => onNode(JSON.parse(e.data)));
-  es.addEventListener('edge', (e) => onEdge(JSON.parse(e.data)));
-  es.addEventListener('huobi', (e) => { const h = JSON.parse(e.data); huobiHits.push(h); renderHits(); renderRecent(); scheduleRender(); log(`发现火币关联：${h.dir === 'up' ? '上游' : '下游'}第 ${h.hop} 跳 ${h.label}`, 'warn'); });
-  es.addEventListener('risk', (e) => { const h = JSON.parse(e.data); riskHits.push(h); renderHits(); log(`发现风险地址：第 ${h.hop} 跳 ${short(h.address)}（${h.score}）`, 'warn'); });
-  es.addEventListener('status', (e) => { const s = JSON.parse(e.data); log(s.message, s.level || ''); });
-  es.addEventListener('recent', (e) => { recentTxs = JSON.parse(e.data).txs; renderRecent(); });
-  es.addEventListener('checked', (e) => {
-    const c = JSON.parse(e.data);
-    if (c.clean) {
-      checkedClean.add(c.id);
-      onPrune(c.id, c.hop);
-    }
-    renderRecent();
-  });
-  es.addEventListener('done', (e) => { finished = true; renderSummary(JSON.parse(e.data)); render(); renderRecent(); });
-  es.addEventListener('fail', (e) => { log(JSON.parse(e.data).message, 'err'); $('summary').innerHTML = `<h3>结果</h3><div style="color:#f87171">${esc(JSON.parse(e.data).message)}</div>`; setRunning(false); });
-  es.onerror = () => setRunning(false);
+  const ctrl = (abort = new AbortController());
+  const opts = { hops, fanout: Number($('fanout').value), perNode: Number($('perNode').value), maxNodes: Number($('maxNodes').value) };
+  const t0 = Date.now();
+  try {
+    await trace(address, opts, (type, data) => handlers[type]?.(snap(data)), ctrl.signal);
+    log(`完成，用时 ${Math.round((Date.now() - t0) / 1000)} 秒`);
+  } catch (e) {
+    log(e.message, 'err');
+    $('summary').innerHTML = `<h3>结果</h3><div style="color:#f87171">${esc(e.message)}</div>`;
+  } finally {
+    if (abort === ctrl) setRunning(false);
+  }
+}
+
+const KEY_LS = 'addr-risk:tronscanKey';
+function applyKeys() {
+  const key = $('tronKey').value.trim();
+  localStorage.setItem(KEY_LS, key);
+  setConfig({ TRONSCAN_API_KEY: key });
 }
 
 $('start').onclick = start;
@@ -431,12 +457,17 @@ document.addEventListener('click', async (e) => {
     const id = btn.dataset.learn;
     btn.disabled = true;
     $('learnMsg').textContent = '学习中…';
-    const r = await (await fetch(`/api/learn?${new URLSearchParams({ address: id })}`)).json();
-    if (r.error) return ($('learnMsg').textContent = `失败：${r.error}`);
+    let r;
+    try {
+      applyKeys();
+      r = await learnAddress(id);
+    } catch (err) {
+      return ($('learnMsg').textContent = `失败：${err.message}`);
+    }
     const n = nodeInfo.get(id);
     nodeInfo.set(id, { ...n, huobi: r.label, huobiKind: 'labeled', huobiConfidence: 'high', huobiEvidence: ['用户确认'] });
     render();
-    $('learnMsg').textContent = `已记录${r.learned.length ? `，并顺藤学到 ${r.learned.length} 个火币地址` : ''}。重新追踪后生效`;
+    $('learnMsg').textContent = `已记录到本机浏览器${r.learned.length ? `，并顺藤学到 ${r.learned.length} 个火币地址` : ''}。重新追踪后生效`;
     log(`已确认 ${short(id)} 为火币地址${r.learned.map((l) => `；学到 ${short(l.address)}（${l.label}）`).join('')}`, 'warn');
     return;
   }
@@ -451,6 +482,16 @@ document.addEventListener('click', async (e) => {
 });
 const pre = new URLSearchParams(location.search).get('address');
 if (pre) $('address').value = pre;
+
+$('tronKey').value = localStorage.getItem(KEY_LS) || '';
+/** 本地 npm run web 时，服务器会把 .env 里的 Key 交给页面；GitHub Pages 上没有这个文件 */
+fetch('./local-config.json')
+  .then((r) => (r.ok ? r.json() : null))
+  .then((c) => { if (c?.TRONSCAN_API_KEY && !$('tronKey').value) $('tronKey').value = c.TRONSCAN_API_KEY; })
+  .catch(() => {});
+
+useStore(await createBrowserStore(new URL('./data/', location.href)));
+$('start').disabled = false;
 </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 {
   "name": "addr-risk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "链上地址风险评估：上下游多跳资金追踪，识别火币（HTX）归集 / 充值 / 出金钱包与地址投毒",
   "type": "module",
   "bin": {

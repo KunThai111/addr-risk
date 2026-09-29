@@ -1,3 +1,4 @@
+import { cfg } from '../config.mjs';
 import { fetchJson, base58ToHex, hexToBase58, sleep, limiter } from '../util.mjs';
 
 const TRONGRID = 'https://api.trongrid.io';
@@ -13,10 +14,10 @@ export const OFFICIAL_TOKENS = {
 export const normalize = (a) => a;
 export const goplusChainId = 'tron';
 
-const scanKey = () => process.env.TRONSCAN_API_KEY;
-const gridKey = () => process.env.TRONGRID_API_KEY;
+const scanKey = () => cfg('TRONSCAN_API_KEY');
+const gridKey = () => cfg('TRONGRID_API_KEY');
 /** TronGrid 无 Key 时每个接口限 1 次/秒；Tronscan 带 Key 约 5 次/秒 */
-const gridQueue = limiter(gridKey() ? 120 : 1100);
+const gridQueue = limiter(() => (gridKey() ? 120 : 1100));
 const scanQueue = limiter(220);
 
 /** 两家接口超限时都可能返回 HTTP 200 + Error 字段，必须识别出来重试，否则会被当成“没有交易” */

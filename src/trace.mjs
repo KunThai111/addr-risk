@@ -1,3 +1,4 @@
+import { cfg } from './config.mjs';
 import { detectChain, formatAmount, makeTxFilters, limiter } from './util.mjs';
 import * as eth from './chains/eth.mjs';
 import * as tron from './chains/tron.mjs';
@@ -81,7 +82,7 @@ export async function trace(address, userOpts, emit, signal) {
   const officialTokens = mod.OFFICIAL_TOKENS;
   const huobiList = loadHuobiLabels(chain);
   const goplus = limiter(400);
-  const tronTags = chain === 'tron' && process.env.TRONSCAN_API_KEY ? (fn) => fn() : null;
+  const tronTags = chain === 'tron' && cfg('TRONSCAN_API_KEY') ? (fn) => fn() : null;
 
   const tags = {};
   const scam = new Set();
@@ -477,7 +478,7 @@ export async function trace(address, userOpts, emit, signal) {
     })),
     stats: { nodes: nodes.size, edges: edges.size, fetched: requests, aborted: !!signal?.aborted },
     opts,
-    tronTagEnabled: chain === 'tron' && !!process.env.TRONSCAN_API_KEY,
+    tronTagEnabled: chain === 'tron' && !!cfg('TRONSCAN_API_KEY'),
     huobiListSize: Object.keys(huobiList).length,
   };
   emit('done', summary);
